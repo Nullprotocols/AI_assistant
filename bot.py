@@ -26,7 +26,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
 OWNER_ID = int(os.getenv('OWNER_ID'))
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+WEBHOOK_URL = os.getenv("https://ai-assistant-d0ya.onrender.com")
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
