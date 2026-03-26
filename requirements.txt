@@ -1,6 +1,7 @@
-python-telegram-bot==20.7
-google-generativeai==0.3.2
-Flask==2.3.3
-requests==2.31.0
-python-dotenv==1.0.0
+python-telegram-bot==21.9
+google-generativeai==0.8.4
+Flask==3.1.0
+requests==2.32.3
+python-dotenv==1.0.1
 APScheduler==3.10.4
+protobuf==5.29.4
