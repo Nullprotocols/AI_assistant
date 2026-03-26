@@ -6,7 +6,8 @@ import logging
 import requests
 import google.generativeai as genai
 from flask import Flask, request
-from telegram import Update, ParseMode
+from telegram import Update
+from telegram.constants import ParseMode  # ✅ FIXED IMPORT
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -26,7 +27,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
 OWNER_ID = int(os.getenv('OWNER_ID'))
-WEBHOOK_URL = os.getenv("https://ai-assistant-d0ya.onrender.com")
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # ✅ FIXED: now reads from env, not hardcoded
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
