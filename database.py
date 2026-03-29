@@ -12,7 +12,9 @@ def get_db():
 
 def init_db(owner_id=None):
     """Initialize database: create tables if not exist, and add owner as admin if provided."""
+    # Ensure the 'data' directory exists
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    
     with get_db() as conn:
         # Users table
         conn.execute('''
