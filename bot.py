@@ -30,7 +30,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
 OWNER_ID = 8104850843  # Hardcoded owner ID
-WEBHOOK_URL = "https://ai-assistant-xp8j.onrender.com"  # Hardcoded webhook URL
+WEBHOOK_URL = "https://ai-assistant-cq4p.onrender.com"  # Hardcoded webhook URL
 PORT = int(os.environ.get('PORT', 5000))
 
 logging.basicConfig(
