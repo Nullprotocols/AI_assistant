@@ -8,7 +8,6 @@ import requests
 import threading
 import time
 import google.generativeai as genai
-from flask import Flask, request
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -161,8 +160,8 @@ def keep_alive():
     while True:
         time.sleep(600)  # 10 minutes
         try:
-            response = requests.get(f"{WEBHOOK_URL}/")
-            logger.info(f"Keep-alive ping sent: {response.status_code}")
+            response = requests.get(WEBHOOK_URL)
+            logger.info(f"Keep-alive ping sent. Status: {response.status_code}")
         except Exception as e:
             logger.error(f"Keep-alive ping failed: {e}")
 
@@ -465,7 +464,6 @@ async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(csv_file)
 
 # ---------- Broadcast, DM, BulkDM (Multi-step with all media) ----------
-# Helper forward function
 async def forward_message_to_user(bot, target_id, source_msg):
     try:
         if source_msg.text:
@@ -591,41 +589,6 @@ async def bulkdm_receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await status_msg.edit_text(f"✅ Bulk DM completed! Sent to {success}/{len(targets)} user(s).")
     return ConversationHandler.END
 
-# ---------- Flask Webhook & Keep-Alive ----------
-app = Flask(__name__)
-
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-@app.route('/')
-def index():
-    return 'Null Protocol Assistant is running'
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.method == 'POST':
-        try:
-            update = Update.de_json(request.get_json(force=True), bot_application.bot)
-            asyncio.run_coroutine_threadsafe(bot_application.process_update(update), loop)
-            return 'OK', 200
-        except Exception as e:
-            logger.error(f"Webhook error: {e}")
-            return 'Error', 500
-    return 'Method Not Allowed', 405
-
-def start_webhook():
-    # Start keep-alive thread
-    threading.Thread(target=keep_alive, daemon=True).start()
-    # Start Flask in a separate thread
-    from threading import Thread
-    def run_flask():
-        app.run(host='0.0.0.0', port=PORT)
-    Thread(target=run_flask, daemon=True).start()
-    # Set webhook
-    asyncio.run_coroutine_threadsafe(bot_application.bot.set_webhook(f"{WEBHOOK_URL}/webhook"), loop)
-    logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
-    loop.run_forever()
-
 # ---------- Telegram Application ----------
 bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -685,4 +648,13 @@ bot_application.add_handler(CommandHandler("backup", backup_cmd))
 bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 if __name__ == '__main__':
-    start_webhook()
+    # Start Keep-Alive Thread
+    threading.Thread(target=keep_alive, daemon=True).start()
+    
+    # Start bot using PTB's built-in webhook (No Flask needed)
+    logger.info("Starting webhook server natively...")
+    bot_application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{WEBHOOK_URL}/webhook"
+    )
