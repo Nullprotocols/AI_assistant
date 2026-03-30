@@ -32,7 +32,7 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
 OWNER_ID = int(os.getenv('OWNER_ID', 8104850843))
 
-# Webhook URL – your provided Render URL as default
+# Webhook URL – read from env, or fallback to your current service URL
 WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://ai-assistant-1-hkyj.onrender.com')
 
 PORT = int(os.environ.get('PORT', 5000))
@@ -261,7 +261,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if part.function_call and part.function_call.name == "generate_image":
                 args = part.function_call.args
                 prompt = args.get("prompt", user_text)
-                # Default values if not provided
                 style = args.get("style", db.get_user_style(user_id))
                 quality = args.get("quality", "4K")
                 await update.message.reply_text(f"🎨 *Creating magic for you, {first_name}!* I'm enhancing your idea...", parse_mode=ParseMode.MARKDOWN)
