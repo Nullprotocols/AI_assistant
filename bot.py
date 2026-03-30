@@ -31,7 +31,10 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
 OWNER_ID = int(os.getenv('OWNER_ID', 8104850843))
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+
+# Webhook URL – your provided Render URL as default
+WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://ai-assistant-cq4p.onrender.com')
+
 PORT = int(os.environ.get('PORT', 5000))
 
 logging.basicConfig(
@@ -661,11 +664,9 @@ def start_webhook():
     loop.run_until_complete(bot_application.initialize())
     loop.run_until_complete(bot_application.start())
 
-    if WEBHOOK_URL:
-        loop.run_until_complete(bot_application.bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
-        logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
-    else:
-        logger.error("WEBHOOK_URL environment variable not set.")
+    # Set webhook
+    loop.run_until_complete(bot_application.bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
+    logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
 
     threading.Thread(target=keep_alive, daemon=True).start()
 
