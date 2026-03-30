@@ -8,6 +8,7 @@ import requests
 import threading
 import time
 import google.generativeai as genai
+from flask import Flask, request
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -28,8 +29,8 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
-OWNER_ID = 8104850843  # Hardcoded owner ID
-WEBHOOK_URL = "https://ai-assistant-cq4p.onrender.com"  # Hardcoded webhook URL
+OWNER_ID = int(os.getenv('OWNER_ID', 8104850843))
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 PORT = int(os.environ.get('PORT', 5000))
 
 logging.basicConfig(
@@ -114,7 +115,8 @@ async def generate_enhanced_image(user_prompt: str, style: str = "photorealistic
     url = f"{IMAGE_API_URL}{full_prompt}"
     for attempt in range(retries + 1):
         try:
-            response = requests.get(url, timeout=60)
+            # Use asyncio.to_thread to avoid blocking
+            response = await asyncio.to_thread(requests.get, url, timeout=60)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
@@ -160,8 +162,8 @@ def keep_alive():
     while True:
         time.sleep(600)  # 10 minutes
         try:
-            response = requests.get(WEBHOOK_URL)
-            logger.info(f"Keep-alive ping sent. Status: {response.status_code}")
+            response = requests.get(f"{WEBHOOK_URL}/")
+            logger.info(f"Keep-alive ping sent: {response.status_code}")
         except Exception as e:
             logger.error(f"Keep-alive ping failed: {e}")
 
@@ -241,7 +243,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = history + [{"role": "user", "parts": [user_text]}]
 
     try:
-        response = model.generate_content(chat)
+        # Use async version to avoid blocking
+        response = await model.generate_content_async(chat)
         if response.candidates and response.candidates[0].content.parts:
             part = response.candidates[0].content.parts[0]
             if part.function_call and part.function_call.name == "generate_image":
@@ -464,6 +467,7 @@ async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(csv_file)
 
 # ---------- Broadcast, DM, BulkDM (Multi-step with all media) ----------
+# Helper forward function
 async def forward_message_to_user(bot, target_id, source_msg):
     try:
         if source_msg.text:
@@ -589,72 +593,125 @@ async def bulkdm_receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await status_msg.edit_text(f"✅ Bulk DM completed! Sent to {success}/{len(targets)} user(s).")
     return ConversationHandler.END
 
-# ---------- Telegram Application ----------
-bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
+# ---------- Flask Webhook & Keep-Alive ----------
+app = Flask(__name__)
 
-# Conversation handlers
-image_conv = ConversationHandler(
-    entry_points=[CommandHandler("image", image_command)],
-    states={WAITING_FOR_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt)]},
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+# Global loop and application reference
+loop = None
+bot_application = None
 
-broadcast_conv = ConversationHandler(
-    entry_points=[CommandHandler("broadcast", broadcast_start)],
-    states={ASK_BROADCAST_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, broadcast_receive_msg)]},
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+def start_webhook():
+    global loop, bot_application
 
-dm_conv = ConversationHandler(
-    entry_points=[CommandHandler("dm", dm_start)],
-    states={
-        ASK_DM_USERID: [MessageHandler(filters.TEXT & ~filters.COMMAND, dm_receive_userid)],
-        ASK_DM_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, dm_receive_msg)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+    # Create new event loop for the main thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-bulkdm_conv = ConversationHandler(
-    entry_points=[CommandHandler("bulkdm", bulkdm_start)],
-    states={
-        ASK_BULK_IDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, bulkdm_receive_ids)],
-        ASK_BULK_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, bulkdm_receive_msg)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
+    # Build application
+    bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# Register all handlers
-bot_application.add_handler(CommandHandler("start", start))
-bot_application.add_handler(CommandHandler("help", help_cmd))
-bot_application.add_handler(CommandHandler("setstyle", setstyle_cmd))
-bot_application.add_handler(CommandHandler("reset", reset_cmd))
-bot_application.add_handler(image_conv)
-bot_application.add_handler(broadcast_conv)
-bot_application.add_handler(dm_conv)
-bot_application.add_handler(bulkdm_conv)
+    # Register handlers
+    image_conv = ConversationHandler(
+        entry_points=[CommandHandler("image", image_command)],
+        states={WAITING_FOR_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt)]},
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
-bot_application.add_handler(CommandHandler("addadmin", add_admin_cmd))
-bot_application.add_handler(CommandHandler("rmadmin", remove_admin_cmd))
-bot_application.add_handler(CommandHandler("admins", list_admins_cmd))
-bot_application.add_handler(CommandHandler("getuser", get_user_cmd))
-bot_application.add_handler(CommandHandler("setpref", set_pref_cmd))
-bot_application.add_handler(CommandHandler("exportuser", export_user_cmd))
-bot_application.add_handler(CommandHandler("cleardata", clear_user_data_cmd))
-bot_application.add_handler(CommandHandler("stats", stats_cmd))
-bot_application.add_handler(CommandHandler("listusers", list_users_cmd))
-bot_application.add_handler(CommandHandler("backup", backup_cmd))
+    broadcast_conv = ConversationHandler(
+        entry_points=[CommandHandler("broadcast", broadcast_start)],
+        states={ASK_BROADCAST_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, broadcast_receive_msg)]},
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
-# Main message handler (must be last)
-bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    dm_conv = ConversationHandler(
+        entry_points=[CommandHandler("dm", dm_start)],
+        states={
+            ASK_DM_USERID: [MessageHandler(filters.TEXT & ~filters.COMMAND, dm_receive_userid)],
+            ASK_DM_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, dm_receive_msg)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    bulkdm_conv = ConversationHandler(
+        entry_points=[CommandHandler("bulkdm", bulkdm_start)],
+        states={
+            ASK_BULK_IDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, bulkdm_receive_ids)],
+            ASK_BULK_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, bulkdm_receive_msg)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    bot_application.add_handler(CommandHandler("start", start))
+    bot_application.add_handler(CommandHandler("help", help_cmd))
+    bot_application.add_handler(CommandHandler("setstyle", setstyle_cmd))
+    bot_application.add_handler(CommandHandler("reset", reset_cmd))
+    bot_application.add_handler(image_conv)
+    bot_application.add_handler(broadcast_conv)
+    bot_application.add_handler(dm_conv)
+    bot_application.add_handler(bulkdm_conv)
+
+    bot_application.add_handler(CommandHandler("addadmin", add_admin_cmd))
+    bot_application.add_handler(CommandHandler("rmadmin", remove_admin_cmd))
+    bot_application.add_handler(CommandHandler("admins", list_admins_cmd))
+    bot_application.add_handler(CommandHandler("getuser", get_user_cmd))
+    bot_application.add_handler(CommandHandler("setpref", set_pref_cmd))
+    bot_application.add_handler(CommandHandler("exportuser", export_user_cmd))
+    bot_application.add_handler(CommandHandler("cleardata", clear_user_data_cmd))
+    bot_application.add_handler(CommandHandler("stats", stats_cmd))
+    bot_application.add_handler(CommandHandler("listusers", list_users_cmd))
+    bot_application.add_handler(CommandHandler("backup", backup_cmd))
+
+    # Main message handler (must be last)
+    bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Initialize and start the application
+    loop.run_until_complete(bot_application.initialize())
+    loop.run_until_complete(bot_application.start())
+
+    # Set webhook
+    if WEBHOOK_URL:
+        loop.run_until_complete(bot_application.bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
+        logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
+    else:
+        logger.error("WEBHOOK_URL environment variable not set. Webhook not configured.")
+
+    # Start keep-alive thread
+    threading.Thread(target=keep_alive, daemon=True).start()
+
+    # Start Flask in a separate thread
+    from threading import Thread
+    def run_flask():
+        app.run(host='0.0.0.0', port=PORT)
+    Thread(target=run_flask, daemon=True).start()
+
+    # Keep the event loop running forever
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+    finally:
+        # Clean shutdown
+        loop.run_until_complete(bot_application.stop())
+        loop.run_until_complete(bot_application.shutdown())
+        loop.close()
+
+# Flask route
+@app.route('/')
+def index():
+    return 'Null Protocol Assistant is running'
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.method == 'POST':
+        try:
+            update = Update.de_json(request.get_json(force=True), bot_application.bot)
+            # Schedule the update processing in the main event loop
+            asyncio.run_coroutine_threadsafe(bot_application.process_update(update), loop)
+            return 'OK', 200
+        except Exception as e:
+            logger.error(f"Webhook error: {e}")
+            return 'Error', 500
+    return 'Method Not Allowed', 405
 
 if __name__ == '__main__':
-    # Start Keep-Alive Thread
-    threading.Thread(target=keep_alive, daemon=True).start()
-    
-    # Start bot using PTB's built-in webhook (No Flask needed)
-    logger.info("Starting webhook server natively...")
-    bot_application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=f"{WEBHOOK_URL}/webhook"
-    )
+    start_webhook()
