@@ -12,9 +12,7 @@ def get_db():
 
 def init_db(owner_id=None):
     """Initialize database: create tables if not exist, and add owner as admin if provided."""
-    # Ensure the 'data' directory exists
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    
     with get_db() as conn:
         # Users table
         conn.execute('''
@@ -49,12 +47,22 @@ def init_db(owner_id=None):
             conn.execute('INSERT OR IGNORE INTO admins (user_id) VALUES (?)', (owner_id,))
 
 def add_user(user_id, username, first_name, last_name):
-    """Add a new user or update existing user's info and set last_active."""
+    """
+    Add a new user or update existing user's info and set last_active.
+    Keeps original joined_at for existing users.
+    """
     with get_db() as conn:
+        # Insert if not exists (preserves original joined_at)
         conn.execute('''
-            INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, last_active)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT OR IGNORE INTO users (user_id, username, first_name, last_name, joined_at, last_active)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ''', (user_id, username, first_name, last_name))
+        # Update username, name, and last_active for existing users
+        conn.execute('''
+            UPDATE users
+            SET username = ?, first_name = ?, last_name = ?, last_active = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+        ''', (username, first_name, last_name, user_id))
 
 def update_last_active(user_id):
     """Update the last_active timestamp for a user."""
