@@ -33,7 +33,7 @@ IMAGE_API_URL = "https://ayaanmods.site/aiimage.php?key=annonymousai&prompt="
 OWNER_ID = int(os.getenv('OWNER_ID', 8104850843))
 
 # Webhook URL – your provided Render URL as default
-WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://ai-assistant-cq4p.onrender.com')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://ai-assistant-1-hkyj.onrender.com')
 
 PORT = int(os.environ.get('PORT', 5000))
 
