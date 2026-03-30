@@ -22,6 +22,7 @@ from telegram.ext import (
 from dotenv import load_dotenv
 import database as db
 from datetime import datetime
+from google.generativeai.types import FunctionDeclaration, Tool
 
 load_dotenv()
 
@@ -45,7 +46,6 @@ db.init_db(OWNER_ID)
 # ---------- Gemini Setup ----------
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Professional, friendly, human-like system instruction
 system_instruction = """
 You are **Null Protocol Assistant**, a warm, friendly, and highly professional personal assistant created by the **Null Protocol** team led by Shahid Ansari.
 
@@ -67,19 +67,33 @@ You are **Null Protocol Assistant**, a warm, friendly, and highly professional p
 - The tool will return multiple images which will be sent as photos.
 """
 
-image_tool = {
-    "name": "generate_image",
-    "description": "Generate ultra-realistic images from a text description. Returns image URLs that will be sent as photos.",
-    "parameters": {
+# Define tool using FunctionDeclaration (required for google-generativeai>=0.5.0)
+generate_image_func = FunctionDeclaration(
+    name="generate_image",
+    description="Generate ultra-realistic images from a text description. Returns image URLs that will be sent as photos.",
+    parameters={
         "type": "object",
         "properties": {
-            "prompt": {"type": "string", "description": "Highly detailed, ultra-realistic image description."},
-            "style": {"type": "string", "description": "Art style", "default": "photorealistic"},
-            "quality": {"type": "string", "description": "HD, 4K, 8K", "default": "4K"}
+            "prompt": {
+                "type": "string",
+                "description": "Highly detailed, ultra-realistic image description."
+            },
+            "style": {
+                "type": "string",
+                "description": "Art style",
+                "default": "photorealistic"
+            },
+            "quality": {
+                "type": "string",
+                "description": "HD, 4K, 8K",
+                "default": "4K"
+            }
         },
-        "required": ["prompt"],
-    },
-}
+        "required": ["prompt"]
+    }
+)
+
+image_tool = Tool(function_declarations=[generate_image_func])
 
 model = genai.GenerativeModel(
     "gemini-1.5-flash",
@@ -89,7 +103,6 @@ model = genai.GenerativeModel(
 
 # ---------- Prompt Enhancer ----------
 async def enhance_prompt(user_prompt: str, style: str = "photorealistic") -> str:
-    """Use Gemini to convert a simple/bad prompt into a detailed, ultra-realistic prompt."""
     enhancer_prompt = f"""
 You are a professional image prompt engineer. Convert the following user request into a highly detailed, ultra-realistic, cinematic, 8K quality image prompt. Add lighting, texture, composition details. Keep it in English. Output ONLY the enhanced prompt, no extra text.
 
@@ -115,7 +128,6 @@ async def generate_enhanced_image(user_prompt: str, style: str = "photorealistic
     url = f"{IMAGE_API_URL}{full_prompt}"
     for attempt in range(retries + 1):
         try:
-            # Use asyncio.to_thread to avoid blocking
             response = await asyncio.to_thread(requests.get, url, timeout=60)
             if response.status_code == 200:
                 data = response.json()
@@ -158,16 +170,15 @@ def add_to_history(user_id, role, message):
 
 # ---------- Keep-Alive Function ----------
 def keep_alive():
-    """Ping the bot's own URL every 10 minutes to prevent Render from sleeping."""
     while True:
-        time.sleep(600)  # 10 minutes
+        time.sleep(600)
         try:
             response = requests.get(f"{WEBHOOK_URL}/")
             logger.info(f"Keep-alive ping sent: {response.status_code}")
         except Exception as e:
             logger.error(f"Keep-alive ping failed: {e}")
 
-# ---------- Manual Image Command (with enhancement) ----------
+# ---------- Manual Image Command ----------
 WAITING_FOR_PROMPT = 1
 
 async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,7 +254,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = history + [{"role": "user", "parts": [user_text]}]
 
     try:
-        # Use async version to avoid blocking
         response = await model.generate_content_async(chat)
         if response.candidates and response.candidates[0].content.parts:
             part = response.candidates[0].content.parts[0]
@@ -444,14 +454,11 @@ async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     backup_dir = os.path.join(os.path.dirname(__file__), 'data', 'backups')
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    db_path = db.DB_PATH
-
     backup_sql = os.path.join(backup_dir, f'backup_{timestamp}.sql')
     with open(backup_sql, 'w', encoding='utf-8') as f:
         with db.get_db() as conn:
             for line in conn.iterdump():
                 f.write(line + '\n')
-
     users = db.get_all_users()
     csv_file = os.path.join(backup_dir, f'users_{timestamp}.csv')
     with open(csv_file, 'w', newline='', encoding='utf-8') as f:
@@ -459,15 +466,12 @@ async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         writer.writerow(['user_id', 'username', 'first_name', 'last_name', 'joined_at', 'last_active', 'preferred_image_style'])
         for u in users:
             writer.writerow([u['user_id'], u['username'], u['first_name'], u['last_name'], u['joined_at'], u['last_active'], u['preferred_image_style']])
-
     await update.message.reply_document(document=open(backup_sql, 'rb'), filename=f'backup_{timestamp}.sql')
     await update.message.reply_document(document=open(csv_file, 'rb'), filename=f'users_{timestamp}.csv')
-
     os.remove(backup_sql)
     os.remove(csv_file)
 
-# ---------- Broadcast, DM, BulkDM (Multi-step with all media) ----------
-# Helper forward function
+# ---------- Broadcast, DM, BulkDM ----------
 async def forward_message_to_user(bot, target_id, source_msg):
     try:
         if source_msg.text:
@@ -502,7 +506,6 @@ async def forward_message_to_user(bot, target_id, source_msg):
         logger.error(f"Forward error to {target_id}: {e}")
         return False
 
-# Broadcast (2-step)
 ASK_BROADCAST_MSG = 1
 async def broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not db.is_admin(update.effective_user.id):
@@ -525,7 +528,6 @@ async def broadcast_receive_msg(update: Update, context: ContextTypes.DEFAULT_TY
     await status_msg.edit_text(f"✅ Broadcast completed! Sent to {success}/{len(users)} users.")
     return ConversationHandler.END
 
-# DM (2-step)
 ASK_DM_USERID = 1
 ASK_DM_MSG = 2
 async def dm_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -557,7 +559,6 @@ async def dm_receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Failed to send. User may have blocked the bot or ID invalid.")
     return ConversationHandler.END
 
-# Bulk DM (2-step)
 ASK_BULK_IDS = 1
 ASK_BULK_MSG = 2
 async def bulkdm_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -596,18 +597,15 @@ async def bulkdm_receive_msg(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ---------- Flask Webhook & Keep-Alive ----------
 app = Flask(__name__)
 
-# Global loop and application reference
 loop = None
 bot_application = None
 
 def start_webhook():
     global loop, bot_application
 
-    # Create new event loop for the main thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # Build application
     bot_application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Register handlers
@@ -616,13 +614,11 @@ def start_webhook():
         states={WAITING_FOR_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_start)],
         states={ASK_BROADCAST_MSG: [MessageHandler(filters.ALL & ~filters.COMMAND, broadcast_receive_msg)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-
     dm_conv = ConversationHandler(
         entry_points=[CommandHandler("dm", dm_start)],
         states={
@@ -631,7 +627,6 @@ def start_webhook():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-
     bulkdm_conv = ConversationHandler(
         entry_points=[CommandHandler("bulkdm", bulkdm_start)],
         states={
@@ -660,42 +655,34 @@ def start_webhook():
     bot_application.add_handler(CommandHandler("stats", stats_cmd))
     bot_application.add_handler(CommandHandler("listusers", list_users_cmd))
     bot_application.add_handler(CommandHandler("backup", backup_cmd))
-
-    # Main message handler (must be last)
     bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Initialize and start the application
+    # Initialize and start application
     loop.run_until_complete(bot_application.initialize())
     loop.run_until_complete(bot_application.start())
 
-    # Set webhook
     if WEBHOOK_URL:
         loop.run_until_complete(bot_application.bot.set_webhook(f"{WEBHOOK_URL}/webhook"))
         logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
     else:
-        logger.error("WEBHOOK_URL environment variable not set. Webhook not configured.")
+        logger.error("WEBHOOK_URL environment variable not set.")
 
-    # Start keep-alive thread
     threading.Thread(target=keep_alive, daemon=True).start()
 
-    # Start Flask in a separate thread
     from threading import Thread
     def run_flask():
         app.run(host='0.0.0.0', port=PORT)
     Thread(target=run_flask, daemon=True).start()
 
-    # Keep the event loop running forever
     try:
         loop.run_forever()
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:
-        # Clean shutdown
         loop.run_until_complete(bot_application.stop())
         loop.run_until_complete(bot_application.shutdown())
         loop.close()
 
-# Flask route
 @app.route('/')
 def index():
     return 'Null Protocol Assistant is running'
@@ -705,7 +692,6 @@ def webhook():
     if request.method == 'POST':
         try:
             update = Update.de_json(request.get_json(force=True), bot_application.bot)
-            # Schedule the update processing in the main event loop
             asyncio.run_coroutine_threadsafe(bot_application.process_update(update), loop)
             return 'OK', 200
         except Exception as e:
