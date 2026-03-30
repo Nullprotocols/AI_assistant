@@ -70,7 +70,7 @@ You are **Null Protocol Assistant**, a warm, friendly, and highly professional p
 - The tool will return multiple images which will be sent as photos.
 """
 
-# Define tool using FunctionDeclaration (required for google-generativeai>=0.5.0)
+# Define tool using FunctionDeclaration (without 'default' fields)
 generate_image_func = FunctionDeclaration(
     name="generate_image",
     description="Generate ultra-realistic images from a text description. Returns image URLs that will be sent as photos.",
@@ -83,13 +83,11 @@ generate_image_func = FunctionDeclaration(
             },
             "style": {
                 "type": "string",
-                "description": "Art style",
-                "default": "photorealistic"
+                "description": "Art style (photorealistic, anime, oil painting, etc.)"
             },
             "quality": {
                 "type": "string",
-                "description": "HD, 4K, 8K",
-                "default": "4K"
+                "description": "Image quality: HD, 4K, 8K"
             }
         },
         "required": ["prompt"]
@@ -263,6 +261,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if part.function_call and part.function_call.name == "generate_image":
                 args = part.function_call.args
                 prompt = args.get("prompt", user_text)
+                # Default values if not provided
                 style = args.get("style", db.get_user_style(user_id))
                 quality = args.get("quality", "4K")
                 await update.message.reply_text(f"🎨 *Creating magic for you, {first_name}!* I'm enhancing your idea...", parse_mode=ParseMode.MARKDOWN)
